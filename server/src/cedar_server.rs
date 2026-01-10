@@ -173,6 +173,7 @@ macro_rules! logged_status {
     }};
 }
 
+#[derive(Clone)]
 struct MyCedar {
     // We organize our state as a sub-object so update_operation_settings() can
     // spawn a sub-task for the SETUP -> OPERATE mode transition; the sub-task
@@ -4077,10 +4078,16 @@ async fn async_main(
     .await
     .unwrap();
 
-    let use_lx200_bt =
-        cedar.state.lock().await.preferences.lock().await.use_bluetooth;
+    let use_lx200_bt = cedar
+        .state
+        .lock()
+        .await
+        .preferences
+        .lock()
+        .await
+        .use_bluetooth;
 
-    let cedar_server = CedarServer::new(cedar);
+    let cedar_server = CedarServer::new(cedar.clone());
 
     let grpc = tonic::transport::Server::builder()
         .accept_http1(true) // TODO: don't need this?
@@ -4115,9 +4122,10 @@ async fn async_main(
         });
     });
 
-    let _bt_task_handle: Option<
-        tokio::task::JoinHandle<Result<(), tonic::Status>>,
-    > = {
+    let (_bt_lx200_task_handle, _bt_server_task_handle): (
+        Option<tokio::task::JoinHandle<Result<(), tonic::Status>>>,
+        Option<tokio::task::JoinHandle<Result<(), tonic::Status>>>,
+    ) = {
         match use_lx200_bt {
             Some(true) => {
                 let mut lx200_server_bt = create_lx200_server(
@@ -4125,12 +4133,19 @@ async fn async_main(
                     async_callback.clone(),
                     true,
                 );
-                Some(tokio::task::spawn(async move {
-                    let _status = lx200_server_bt.serve_requests().await;
-                    Ok(())
-                }))
+                let mut bt_server = BluetoothServer::new(cedar);
+                (
+                    Some(tokio::task::spawn(async move {
+                        let _status = lx200_server_bt.serve_requests().await;
+                        Ok(())
+                    })),
+                    Some(tokio::task::spawn(async move {
+                        let _status = bt_server.serve_requests().await;
+                        Ok(())
+                    })),
+                )
             }
-            _ => None,
+            _ => (None, None),
         }
     };
 
