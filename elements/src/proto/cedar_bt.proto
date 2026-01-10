@@ -52,6 +52,7 @@ enum ResponseStatus {
   RESPONSE_STATUS_INVALID_REQUEST = 3;
   // Request fails to parse
   RESPONSE_STATUS_MALFORMED_INPUT = 4;
+  RESPONSE_STATUS_RPC_FAILED = 5;
 }
 
 message CedarBtResponse {
@@ -64,11 +65,12 @@ message CedarBtResponse {
     cedar.FrameResult frame_result = 6;
     cedar_sky.QueryCatalogResponse query_catalog_response = 7;
     cedar_sky.CatalogEntry catalog_entry = 8;
-    cedar_sky.ObjectTypeResponse object_type_response = 9;
-    cedar_sky.ConstellationResponse constellation_response = 10;
-    cedar.GetBluetoothNameResponse get_bluetooth_name_response = 11;
-    cedar.StartBondingResponse start_bonding_response = 12;
-    cedar.GetBondedDevicesResponse get_bonded_devices_response = 13;
+    cedar_sky.CatalogDescriptionResponse catalog_description_response = 9;
+    cedar_sky.ObjectTypeResponse object_type_response = 10;
+    cedar_sky.ConstellationResponse constellation_response = 11;
+    cedar.GetBluetoothNameResponse get_bluetooth_name_response = 12;
+    cedar.StartBondingResponse start_bonding_response = 13;
+    cedar.GetBondedDevicesResponse get_bonded_devices_response = 14;
   }
 }
 
