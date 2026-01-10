@@ -1,0 +1,74 @@
+// Copyright (c) 2026 Omair Kamil
+// See LICENSE file in root directory for license terms.
+
+syntax = "proto3";
+
+import "cedar.proto";
+import "cedar_sky.proto";
+
+package cedar_bt;
+
+enum RequestType {
+  REQUEST_TYPE_UNKNOWN = 0;
+  REQUEST_TYPE_GET_SERVER_LOG = 1;
+  REQUEST_TYPE_UPDATE_FIXED_SETTINGS = 2;
+  REQUEST_TYPE_CLEAR_OBSERVER_LOCATION = 3;
+  REQUEST_TYPE_UPDATE_OPERATION_SETTINGS = 4;
+  REQUEST_TYPE_UPDATE_PREFERENCES = 5;
+  REQUEST_TYPE_GET_FRAME = 6;
+  REQUEST_TYPE_INITIATE_ACTION = 7;
+  REQUEST_TYPE_QUERY_CATALOG_ENTRIES = 8;
+  REQUEST_TYPE_GET_CATALOG_ENTRY = 9;
+  REQUEST_TYPE_GET_CATALOG_DESCRIPTIONS = 10;
+  REQUEST_TYPE_GET_OBJECT_TYPES = 11;
+  REQUEST_TYPE_GET_CONSTELLATIONS = 12;
+  REQUEST_TYPE_GET_BLUETOOTH_NAME = 13;
+  REQUEST_TYPE_START_BONDING = 14;
+  REQUEST_TYPE_GET_BONDED_DEVICES = 15;
+  REQUEST_TYPE_REMOVE_BOND = 16;
+}
+
+message CedarBtRequest {
+  RequestType request_type = 1;
+  oneof request_oneof {
+    cedar.ServerLogRequest server_log_request = 2;
+    cedar.FixedSettings fixed_settings = 3;
+    cedar.OperationSettings operation_settings = 4;
+    cedar.Preferences preferences = 5;
+    cedar.FrameRequest frame_request = 6;
+    cedar.ActionRequest action_request = 7;
+    cedar_sky.QueryCatalogRequest query_catalog_request = 8;
+    cedar_sky.CatalogEntryKey catalog_entry_key = 9;
+    cedar.RemoveBondRequest remove_bond_request = 10;
+  }
+}
+
+enum ResponseStatus {
+  RESPONSE_STATUS_UNKNOWN = 0;
+  RESPONSE_STATUS_SUCCESS = 1;
+  // Request type is not known to the server
+  RESPONSE_STATUS_UNKNOWN_REQUEST = 2;
+  // Request type is known but the expected request isn't present
+  RESPONSE_STATUS_INVALID_REQUEST = 3;
+  // Request fails to parse
+  RESPONSE_STATUS_MALFORMED_INPUT = 4;
+}
+
+message CedarBtResponse {
+  ResponseStatus response_status = 1;
+  oneof response_oneof {
+    cedar.ServerLogResult server_log_result = 2;
+    cedar.FixedSettings fixed_settings = 3;
+    cedar.OperationSettings operation_settings = 4;
+    cedar.Preferences preferences = 5;
+    cedar.FrameResult frame_result = 6;
+    cedar_sky.QueryCatalogResponse query_catalog_response = 7;
+    cedar_sky.CatalogEntry catalog_entry = 8;
+    cedar_sky.ObjectTypeResponse object_type_response = 9;
+    cedar_sky.ConstellationResponse constellation_response = 10;
+    cedar.GetBluetoothNameResponse get_bluetooth_name_response = 11;
+    cedar.StartBondingResponse start_bonding_response = 12;
+    cedar.GetBondedDevicesResponse get_bonded_devices_response = 13;
+  }
+}
+

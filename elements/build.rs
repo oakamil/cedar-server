@@ -4,7 +4,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tonic_build::configure().compile_with_config(
         config,
-        &["src/proto/cedar.proto", "src/proto/cedar_sky.proto",
-          "src/proto/cedar_common.proto"], &["src/proto"])?;
+        &["src/proto/cedar.proto", "src/proto/cedar_bt.proto",
+          "src/proto/cedar_sky.proto", "src/proto/cedar_common.proto"],
+        &["src/proto"])?;
     Ok(())
 }

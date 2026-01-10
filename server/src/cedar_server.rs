@@ -81,6 +81,7 @@ use tracing_subscriber::{fmt, prelude::*, registry, EnvFilter};
 use self::multiplex_service::MultiplexService;
 use crate::{
     activity_led::ActivityLed,
+    bluetooth_server::BluetoothServer,
     bonding_helper::{
         get_adapter_alias, get_bonded_devices, remove_bond, start_bonding,
     },
