@@ -3,7 +3,7 @@
 
 use std::{path::Path, sync::Arc};
 
-use cedar_solver::tetra3_solver::Tetra3Solver;
+use cedar_solver::Tetra3Solver;
 use pico_args::Arguments;
 use tetra3::Tetra3;
 use tokio::sync::Mutex;
