@@ -17,6 +17,7 @@ canonical-error = "0.1.0"
 cedar-camera = { version = "0.4.0", path = "../../cedar-camera" }
 cedar_detect = { version = "0.8.0", path = "../../cedar-detect" }
 cedar-elements = { path = "../elements" }
+cedar-solver = { path = "../../tetra-solve-rs/cedar-solver" }
 chrono = "0.4.31"
 clap = "4.5.23"
 ctrlc = "3.4.2"
@@ -31,6 +32,7 @@ nix = { version = "0.28.0", features = ["time"] }
 pico-args = "0.5.0"
 prost = "0.12.3"
 prost-types = "0.12.3"
+tetra3 = { path = "../../tetra-solve-rs/tetra3" }
 tetra3_server = { version = "0.1.0", path = "../../tetra3_server" }
 tokio = { version = "1.41.0", features = ["macros", "rt-multi-thread"] }
 tonic = "0.11"
