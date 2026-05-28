@@ -87,30 +87,51 @@ fn custom_rotate_image_and_crop(image: &GrayImage, rotator: &ImageRotator) -> Gr
             let inv_fx = 65536 - fx;
             let inv_fy = 65536 - fy;
 
-            // Bilinear weights (16.16 fixed point)
-            let w00 = (inv_fx * inv_fy) >> 16;
-            let w10 = (fx * inv_fy) >> 16;
-            let w01 = (inv_fx * fy) >> 16;
-            let w11 = (fx * fy) >> 16;
+            // Branch predictor friendly Safe Zone check
+            let blended = if px >= 0 && px < in_w - 1 && py >= 0 && py < in_h - 1 {
+                // FAST PATH: We are guaranteed to be inside the image bounds.
+                // We can fetch all 4 adjacent pixels with a single base index calculation
+                // and skip all internal bounds checking.
+                let base_idx = (py * in_w + px) as usize;
+                
+                // Using unsafe get_unchecked to guarantee no hidden slice bounds checks 
+                // on the inner loop, extracting maximum performance.
+                let (p00, p10, p01, p11) = unsafe {
+                    (
+                        *in_buf.get_unchecked(base_idx) as u32,
+                        *in_buf.get_unchecked(base_idx + 1) as u32,
+                        *in_buf.get_unchecked(base_idx + in_w as usize) as u32,
+                        *in_buf.get_unchecked(base_idx + in_w as usize + 1) as u32,
+                    )
+                };
 
-            // Safe fetch helper for bounds checking
-            let fetch = |x: i32, y: i32| -> u32 {
-                if x >= 0 && x < in_w && y >= 0 && y < in_h {
-                    in_buf[(y * in_w + x) as usize] as u32
-                } else {
-                    0 // Default black outside image bounds (matching Luma([0]))
-                }
+                // Factored bilinear math: 6 multiplications instead of 8.
+                let top = p00 * inv_fx + p10 * fx;
+                let bot = p01 * inv_fx + p11 * fx;
+                
+                // 64-bit vertical blend to prevent overflow
+                ((top as u64 * inv_fy as u64 + bot as u64 * fy as u64) >> 32) as u8
+            } else {
+                // SLOW PATH (Edges only): Safe fetch helper for bounds checking
+                let fetch = |x: i32, y: i32| -> u32 {
+                    if x >= 0 && x < in_w && y >= 0 && y < in_h {
+                        in_buf[(y * in_w + x) as usize] as u32
+                    } else {
+                        0 // Default black outside image bounds
+                    }
+                };
+
+                let p00 = fetch(px, py);
+                let p10 = fetch(px + 1, py);
+                let p01 = fetch(px, py + 1);
+                let p11 = fetch(px + 1, py + 1);
+
+                let top = p00 * inv_fx + p10 * fx;
+                let bot = p01 * inv_fx + p11 * fx;
+                ((top as u64 * inv_fy as u64 + bot as u64 * fy as u64) >> 32) as u8
             };
-
-            let p00 = fetch(px, py);
-            let p10 = fetch(px + 1, py);
-            let p01 = fetch(px, py + 1);
-            let p11 = fetch(px + 1, py + 1);
-
-            // Blend based on weights. Total weight sum is 65536.
-            let blended = (p00 * w00 + p10 * w10 + p01 * w01 + p11 * w11) >> 16;
             
-            out_buf[out_idx] = blended as u8;
+            out_buf[out_idx] = blended;
             out_idx += 1;
 
             // Step forward in X direction
