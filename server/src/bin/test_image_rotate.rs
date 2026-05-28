@@ -25,6 +25,10 @@ struct Args {
     /// Use the custom optimized algorithm for Pi Zero 2W.
     #[arg(short, long)]
     custom: bool,
+
+    /// Use nearest neighbor interpolation instead of bilinear (custom algorithm only).
+    #[arg(long)]
+    nearest: bool,
 }
 
 /// A highly optimized custom rotation function designed for constrained CPUs
@@ -43,7 +47,7 @@ struct Args {
 /// Note on turbojpeg: turbojpeg is excellent for JPEG encode/decode, but it 
 /// cannot perform arbitrary degree rotations (only 90/180/270). Since we need
 /// arbitrary affine transforms here, we rely on custom loop logic.
-fn custom_rotate_image_and_crop(image: &GrayImage, rotator: &ImageRotator) -> GrayImage {
+fn custom_rotate_image_and_crop(image: &GrayImage, rotator: &ImageRotator, nearest: bool) -> GrayImage {
     let (w, h) = image.dimensions();
     assert!(w >= h, "rotate_image_and_crop requires width >= height, got {}x{}", w, h);
     let square_size = h;
@@ -72,76 +76,105 @@ fn custom_rotate_image_and_crop(image: &GrayImage, rotator: &ImageRotator) -> Gr
 
     let mut out_idx = 0;
 
-    for _y in 0..square_size {
-        let mut src_x = row_src_x;
-        let mut src_y = row_src_y;
+    if nearest {
+        // NEAREST NEIGHBOR PATH
+        for _y in 0..square_size {
+            let mut src_x = row_src_x;
+            let mut src_y = row_src_y;
 
-        for _x in 0..square_size {
-            // Integer pixel coordinates (16.16 shift right by 16)
-            let px = src_x >> 16;
-            let py = src_y >> 16;
-            
-            // Fractional parts (0 to 65535)
-            let fx = (src_x & 0xFFFF) as u32;
-            let fy = (src_y & 0xFFFF) as u32;
-            let inv_fx = 65536 - fx;
-            let inv_fy = 65536 - fy;
+            for _x in 0..square_size {
+                // Round to nearest integer (+0.5 in fixed point is +32768)
+                let px = (src_x + 32768) >> 16;
+                let py = (src_y + 32768) >> 16;
 
-            // Branch predictor friendly Safe Zone check
-            let blended = if px >= 0 && px < in_w - 1 && py >= 0 && py < in_h - 1 {
-                // FAST PATH: We are guaranteed to be inside the image bounds.
-                // We can fetch all 4 adjacent pixels with a single base index calculation
-                // and skip all internal bounds checking.
-                let base_idx = (py * in_w + px) as usize;
-                
-                // Using unsafe get_unchecked to guarantee no hidden slice bounds checks 
-                // on the inner loop, extracting maximum performance.
-                let (p00, p10, p01, p11) = unsafe {
-                    (
-                        *in_buf.get_unchecked(base_idx) as u32,
-                        *in_buf.get_unchecked(base_idx + 1) as u32,
-                        *in_buf.get_unchecked(base_idx + in_w as usize) as u32,
-                        *in_buf.get_unchecked(base_idx + in_w as usize + 1) as u32,
-                    )
+                let blended = if px >= 0 && px < in_w && py >= 0 && py < in_h {
+                    // Safe fetch without internal bounds checks
+                    unsafe { *in_buf.get_unchecked((py * in_w + px) as usize) }
+                } else {
+                    0 // Default black outside image bounds
                 };
 
-                // Factored bilinear math: 6 multiplications instead of 8.
-                let top = p00 * inv_fx + p10 * fx;
-                let bot = p01 * inv_fx + p11 * fx;
-                
-                // 64-bit vertical blend to prevent overflow
-                ((top as u64 * inv_fy as u64 + bot as u64 * fy as u64) >> 32) as u8
-            } else {
-                // SLOW PATH (Edges only): Safe fetch helper for bounds checking
-                let fetch = |x: i32, y: i32| -> u32 {
-                    if x >= 0 && x < in_w && y >= 0 && y < in_h {
-                        in_buf[(y * in_w + x) as usize] as u32
-                    } else {
-                        0 // Default black outside image bounds
-                    }
-                };
+                out_buf[out_idx] = blended;
+                out_idx += 1;
 
-                let p00 = fetch(px, py);
-                let p10 = fetch(px + 1, py);
-                let p01 = fetch(px, py + 1);
-                let p11 = fetch(px + 1, py + 1);
-
-                let top = p00 * inv_fx + p10 * fx;
-                let bot = p01 * inv_fx + p11 * fx;
-                ((top as u64 * inv_fy as u64 + bot as u64 * fy as u64) >> 32) as u8
-            };
+                // Step forward in X direction
+                src_x += dx_src_x;
+                src_y += dx_src_y;
+            }
             
-            out_buf[out_idx] = blended;
-            out_idx += 1;
-
-            // Step forward in X direction
-            src_x += dx_src_x;
-            src_y += dx_src_y;
+            // Step forward in Y direction (for the next row)
+            row_src_x += dy_src_x;
+            row_src_y += dy_src_y;
         }
-        
-        // Step forward in Y direction (for the next row)
-        row_src_x += dy_src_x;
-        row_src_y += dy_src_y;
+    } else {
+        // BILINEAR PATH
+        for _y in 0..square_size {
+            let mut src_x = row_src_x;
+            let mut src_y = row_src_y;
+
+            for _x in 0..square_size {
+                // Integer pixel coordinates (16.16 shift right by 16)
+                let px = src_x >> 16;
+                let py = src_y >> 16;
+                
+                // Fractional parts (0 to 65535)
+                let fx = (src_x & 0xFFFF) as u32;
+                let fy = (src_y & 0xFFFF) as u32;
+                let inv_fx = 65536 - fx;
+                let inv_fy = 65536 - fy;
+
+                // Branch predictor friendly Safe Zone check
+                let blended = if px >= 0 && px < in_w - 1 && py >= 0 && py < in_h - 1 {
+                    // FAST PATH: We are guaranteed to be inside the image bounds.
+                    let base_idx = (py * in_w + px) as usize;
+                    
+                    let (p00, p10, p01, p11) = unsafe {
+                        (
+                            *in_buf.get_unchecked(base_idx) as u32,
+                            *in_buf.get_unchecked(base_idx + 1) as u32,
+                            *in_buf.get_unchecked(base_idx + in_w as usize) as u32,
+                            *in_buf.get_unchecked(base_idx + in_w as usize + 1) as u32,
+                        )
+                    };
+
+                    // Factored bilinear math: 6 multiplications instead of 8.
+                    let top = p00 * inv_fx + p10 * fx;
+                    let bot = p01 * inv_fx + p11 * fx;
+                    
+                    // 64-bit vertical blend to prevent overflow
+                    ((top as u64 * inv_fy as u64 + bot as u64 * fy as u64) >> 32) as u8
+                } else {
+                    // SLOW PATH (Edges only)
+                    let fetch = |x: i32, y: i32| -> u32 {
+                        if x >= 0 && x < in_w && y >= 0 && y < in_h {
+                            in_buf[(y * in_w + x) as usize] as u32
+                        } else {
+                            0
+                        }
+                    };
+
+                    let p00 = fetch(px, py);
+                    let p10 = fetch(px + 1, py);
+                    let p01 = fetch(px, py + 1);
+                    let p11 = fetch(px + 1, py + 1);
+
+                    let top = p00 * inv_fx + p10 * fx;
+                    let bot = p01 * inv_fx + p11 * fx;
+                    ((top as u64 * inv_fy as u64 + bot as u64 * fy as u64) >> 32) as u8
+                };
+                
+                out_buf[out_idx] = blended;
+                out_idx += 1;
+
+                // Step forward in X direction
+                src_x += dx_src_x;
+                src_y += dx_src_y;
+            }
+            
+            // Step forward in Y direction
+            row_src_x += dy_src_x;
+            row_src_y += dy_src_y;
+        }
     }
 
     output
@@ -160,7 +193,11 @@ fn main() {
     
     // Distinguish output file based on method used
     if args.custom {
-        output_path.set_extension("custom.bmp");
+        if args.nearest {
+            output_path.set_extension("custom.nearest.bmp");
+        } else {
+            output_path.set_extension("custom.bmp");
+        }
     } else {
         output_path.set_extension("bmp");
     }
@@ -179,8 +216,8 @@ fn main() {
     
     let rotate_start = Instant::now();
     let output_img = if args.custom {
-        info!("Using custom optimized rotation algorithm");
-        custom_rotate_image_and_crop(&input_img, &image_rotator)
+        info!("Using custom optimized rotation algorithm (nearest: {})", args.nearest);
+        custom_rotate_image_and_crop(&input_img, &image_rotator, args.nearest)
     } else {
         info!("Using default imageproc rotation algorithm");
         image_rotator.rotate_image_and_crop(&input_img)
